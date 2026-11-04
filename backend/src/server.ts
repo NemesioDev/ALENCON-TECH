@@ -12,6 +12,10 @@ import {
   formatarCnpj,
   testarConexaoSerpro,
 } from './services/serproService';
+import {
+  inicializarBucketsSupabase,
+  uploadPdfParaSupabaseStorage,
+} from './supabaseClient';
 
 dotenv.config();
 
@@ -362,9 +366,14 @@ app.delete('/api/empresas/:id', async (req, res) => {
 app.get('/api/configuracoes', async (_req, res) => {
   try {
     const config = await obterConfiguracao();
+    const { certificadoBase64, ...configSemBinario } = config;
     res.json({
-      ...config,
-      temCertificadoSalvo: Boolean(config.certificadoPath && fs.existsSync(config.certificadoPath)),
+      ...configSemBinario,
+      bancoConectado: 'Supabase PostgreSQL (ejvxpwmnrivqgiyocyns)',
+      temCertificadoSalvo: Boolean(
+        (certificadoBase64 && certificadoBase64.length > 20) ||
+          (config.certificadoPath && fs.existsSync(config.certificadoPath))
+      ),
     });
   } catch (error: any) {
     res.status(500).json({ erro: 'Erro ao carregar configurações.', detalhes: error.message });
@@ -431,10 +440,14 @@ app.post(
         return res.status(400).json({ erro: 'Nenhum arquivo de certificado (.pfx) enviado.' });
       }
 
+      const arquivoBuffer = fs.readFileSync(req.file.path);
+      const certificadoBase64 = arquivoBuffer.toString('base64');
+
       const senha = req.body.certificadoSenha;
       const updateData: any = {
         certificadoNome: req.file.originalname,
         certificadoPath: req.file.path,
+        certificadoBase64,
       };
       if (senha !== undefined) {
         updateData.certificadoSenha = String(senha);
@@ -448,14 +461,16 @@ app.post(
       await registrarAuditoria(
         'SEGURANCA',
         'UPLOAD_CERTIFICADO_DIGITAL_A1',
-        `Certificado A1 "${req.file.originalname}" armazenado em cofre local para handshake mTLS.`
+        `Certificado A1 "${req.file.originalname}" gravado no banco Supabase PostgreSQL para handshake mTLS.`
       );
+
+      const { certificadoBase64: _omit, ...configLimpa } = atualizado;
 
       res.json({
         sucesso: true,
-        mensagem: `Certificado Digital "${req.file.originalname}" armazenado com segurança!`,
+        mensagem: `Certificado Digital "${req.file.originalname}" salvo no banco Supabase com segurança!`,
         configuracao: {
-          ...atualizado,
+          ...configLimpa,
           temCertificadoSalvo: true,
         },
       });
@@ -586,6 +601,12 @@ app.post('/api/das/emitir-lote', async (req, res) => {
           PDFS_DIR
         );
 
+        // Envia o PDF também para o bucket 'das-pdfs' no Supabase Storage
+        const supabasePdfUrl = await uploadPdfParaSupabaseStorage(
+          emissao.nomeArquivoPdf,
+          Buffer.from(emissao.pdfBase64, 'base64')
+        );
+
         const registroGuia = await prisma.historicoGuiasDas.upsert({
           where: {
             empresaId_competencia: {
@@ -600,6 +621,8 @@ app.post('/api/das/emitir-lote', async (req, res) => {
             mensagemRetorno: emissao.mensagem,
             caminhoPdf: emissao.caminhoPdf,
             nomeArquivoPdf: emissao.nomeArquivoPdf,
+            pdfBase64: emissao.pdfBase64,
+            supabasePdfUrl,
             modoEmissao: config.modoAmbiente,
             codigoAutenticacao: emissao.codigoAutenticacao,
             valorTotal: emissao.valorTotal,
@@ -614,6 +637,8 @@ app.post('/api/das/emitir-lote', async (req, res) => {
             mensagemRetorno: emissao.mensagem,
             caminhoPdf: emissao.caminhoPdf,
             nomeArquivoPdf: emissao.nomeArquivoPdf,
+            pdfBase64: emissao.pdfBase64,
+            supabasePdfUrl,
             modoEmissao: config.modoAmbiente,
             codigoAutenticacao: emissao.codigoAutenticacao,
             valorTotal: emissao.valorTotal,
@@ -738,9 +763,9 @@ app.get('/api/das/download/:id', async (req, res) => {
       include: { empresa: true },
     });
 
-    if (!guia || !guia.caminhoPdf || !fs.existsSync(guia.caminhoPdf)) {
+    if (!guia) {
       return res.status(404).json({
-        erro: 'Arquivo PDF da guia DAS não encontrado no servidor. Emita a guia novamente.',
+        erro: 'Registro da guia DAS não encontrado no banco Supabase.',
       });
     }
 
@@ -756,8 +781,20 @@ app.get('/api/das/download/:id', async (req, res) => {
       `attachment; filename="${guia.nomeArquivoPdf || `DAS_${guia.competencia}.pdf`}"`
     );
 
-    const fileStream = fs.createReadStream(guia.caminhoPdf);
-    fileStream.pipe(res);
+    // Prioriza servir direto do banco de dados Supabase (pdfBase64) para funcionar em qualquer máquina
+    if (guia.pdfBase64 && guia.pdfBase64.length > 20) {
+      const pdfBuffer = Buffer.from(guia.pdfBase64, 'base64');
+      return res.send(pdfBuffer);
+    }
+
+    if (guia.caminhoPdf && fs.existsSync(guia.caminhoPdf)) {
+      const fileStream = fs.createReadStream(guia.caminhoPdf);
+      return fileStream.pipe(res);
+    }
+
+    return res.status(404).json({
+      erro: 'Binário PDF não encontrado. Emita a guia novamente para gravar no Supabase.',
+    });
   } catch (error: any) {
     console.error('Erro em GET /api/das/download/:id:', error);
     res.status(500).json({ erro: 'Erro ao baixar o PDF da guia DAS.' });
@@ -1785,12 +1822,15 @@ app.get('/api/dashboard-geral', async (req, res) => {
   }
 });
 
-// Inicialização do servidor e seed automático
+// Inicialização do servidor e seed automático no Supabase
 async function iniciarServidor() {
   try {
+    await inicializarBucketsSupabase();
     await runSeed();
     app.listen(PORT, () => {
-      console.log(`🚀 Servidor Alencon Tech + SERPRO rodando em http://localhost:${PORT}`);
+      console.log(
+        `🚀 Servidor Alencon Tech + SERPRO + Supabase PostgreSQL rodando em http://localhost:${PORT}`
+      );
     });
   } catch (err) {
     console.error('Erro ao inicializar servidor:', err);

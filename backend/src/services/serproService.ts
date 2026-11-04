@@ -27,6 +27,7 @@ export interface ResultadoEmissaoDas {
   sucesso: boolean;
   caminhoPdf: string;
   nomeArquivoPdf: string;
+  pdfBase64: string;
   mensagem: string;
   idSistema: string;
   idServico: string;
@@ -52,19 +53,26 @@ export function formatarCnpj(cnpj: string): string {
 }
 
 /**
- * Cria o agente HTTPS com mTLS (Certificado Digital A1 .pfx + senha) para o Modo Produção
+ * Cria o agente HTTPS com mTLS (Certificado Digital A1 .pfx + senha) para o Modo Produção.
+ * Suporta leitura direta do banco Supabase (certificadoBase64) ou do sistema de arquivos.
  */
 function criarHttpsAgentProducao(config: ConfiguracaoEscritorio): https.Agent {
-  if (!config.certificadoPath || !fs.existsSync(config.certificadoPath)) {
+  let pfxBuffer: Buffer | null = null;
+
+  if (config.certificadoBase64 && config.certificadoBase64.length > 20) {
+    pfxBuffer = Buffer.from(config.certificadoBase64, 'base64');
+  } else if (config.certificadoPath && fs.existsSync(config.certificadoPath)) {
+    pfxBuffer = fs.readFileSync(config.certificadoPath);
+  }
+
+  if (!pfxBuffer) {
     throw new Error(
-      'Arquivo do Certificado Digital A1 (.pfx) não encontrado. Faça o upload na aba Configurações.'
+      'Arquivo do Certificado Digital A1 (.pfx) não encontrado no banco de dados. Faça o upload na aba Configurações.'
     );
   }
   if (!config.certificadoSenha) {
     throw new Error('A senha do Certificado Digital A1 não foi informada nas Configurações.');
   }
-
-  const pfxBuffer = fs.readFileSync(config.certificadoPath);
 
   return new https.Agent({
     pfx: pfxBuffer,
@@ -527,6 +535,7 @@ export async function emitirGuiaDasSerpro(
     sucesso: true,
     caminhoPdf: caminhoCompletoPdf,
     nomeArquivoPdf,
+    pdfBase64: pdfBuffer.toString('base64'),
     mensagem: msgSucesso,
     idSistema,
     idServico,

@@ -1,1 +1,1 @@
-{"root":["./src/app.tsx","./src/main.tsx","./src/types.ts","./src/components/dashboardgeralview.tsx","./src/components/modulosalencon.tsx","./src/utils/formatters.ts"],"version":"5.9.3"}
+{"root":["./src/app.tsx","./src/main.tsx","./src/supabaseclient.ts","./src/types.ts","./src/components/dashboardgeralview.tsx","./src/components/modulosalencon.tsx","./src/utils/formatters.ts"],"errors":true,"version":"5.9.3"}

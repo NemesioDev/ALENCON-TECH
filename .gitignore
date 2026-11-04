@@ -25,3 +25,4 @@ backend/prisma/*.db-journal
 *.log
 .DS_Store
 Thumbs.db
+
