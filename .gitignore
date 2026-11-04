@@ -1,0 +1,27 @@
+# Dependências
+node_modules/
+backend/node_modules/
+frontend/node_modules/
+
+# Builds
+dist/
+backend/dist/
+frontend/dist/
+
+# Variáveis de ambiente e segredos
+.env
+backend/.env
+frontend/.env
+*.pfx
+*.p12
+backend/storage/certificados/*
+backend/storage/pdfs/*
+
+# Banco de dados SQLite local
+backend/prisma/*.db
+backend/prisma/*.db-journal
+
+# Logs e arquivos do sistema
+*.log
+.DS_Store
+Thumbs.db

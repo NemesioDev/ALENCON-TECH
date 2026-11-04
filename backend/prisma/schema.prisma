@@ -1,0 +1,208 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// ============================================================================
+// TABELAS ORIGINAIS (MANTIDAS E INTEGRADAS AO NÚCLEO ALENCON TECH)
+// ============================================================================
+
+model ConfiguracaoEscritorio {
+  id                  Int       @id @default(1)
+  organizationId      String    @default("org_alencon_001")
+  nomePlataforma      String    @default("Alencon Tech")
+  planoSaaS           String    @default("Professional") // "Starter" | "Professional" | "Business"
+  limiteCnpjs         Int       @default(50)
+  franquiaConsultas   Int       @default(500)
+  modoAmbiente        String    @default("trial") // "trial" | "production"
+  cnpjEscritorio      String    @default("")
+  razaoSocial         String    @default("Alencon Contabilidade & Inteligência Fiscal Ltda")
+  consumerKey         String    @default("")
+  consumerSecret      String    @default("")
+  certificadoNome     String    @default("")
+  certificadoPath     String    @default("")
+  certificadoSenha    String    @default("")
+  ultimoTesteSucesso  Boolean   @default(false)
+  ultimoTesteData     DateTime?
+  ultimoTesteMensagem String    @default("")
+  updatedAt           DateTime  @updatedAt
+}
+
+model EmpresasClientes {
+  id                  Int                  @id @default(autoincrement())
+  organizationId      String               @default("org_alencon_001")
+  razaoSocial         String
+  cnpj                String               @unique
+  regimeTributario    String               // "MEI" | "SIMPLES_NACIONAL"
+  uf                  String               @default("SP")
+  municipio           String               @default("São Paulo")
+  responsavelFiscal   String               @default("Ana Costa (Fiscal)")
+  email               String               @default("")
+  whatsapp            String               @default("")
+  ativo               Boolean              @default(true)
+  createdAt           DateTime             @default(now())
+  updatedAt           DateTime             @updatedAt
+  guias               HistoricoGuiasDas[]
+  obrigacoesInstancia ObligationInstance[]
+  consultasFiscais    FiscalCheck[]
+  ocorrenciasFiscais  FiscalOccurrence[]
+  tarefas             Task[]
+  solicitacoesHub     ClientHubRequest[]
+}
+
+model HistoricoGuiasDas {
+  id                 Int              @id @default(autoincrement())
+  organizationId     String           @default("org_alencon_001")
+  empresaId          Int
+  empresa            EmpresasClientes @relation(fields: [empresaId], references: [id], onDelete: Cascade)
+  competencia        String           // Formato "AAAAMM" (ex: "202610")
+  idSistema          String           // "PGDASD" | "PGMEI"
+  idServico          String           // "GERARDAS12" | "GERARDASPDF21"
+  status             String           // "NAO_GERADA" | "PROCESSANDO" | "EMITIDA" | "ERRO"
+  mensagemRetorno    String           @default("")
+  caminhoPdf         String           @default("")
+  nomeArquivoPdf     String           @default("")
+  modoEmissao        String           @default("trial") // "trial" | "production"
+  codigoAutenticacao String           @default("")
+  valorTotal         String           @default("")
+  dataVencimento     String           @default("")
+  createdAt          DateTime         @default(now())
+  updatedAt          DateTime         @updatedAt
+
+  @@unique([empresaId, competencia])
+}
+
+// ============================================================================
+// NOVAS ENTIDADES DO MODELO DE DADOS ALENCON TECH (SEÇÕES 2, 4, 5, 6 e 7 DO PDF)
+// ============================================================================
+
+// Catálogo e Regras de Obrigações (obligations + obligation_rules - Seção 2.2 e 4)
+model ObligationRule {
+  id                     Int                  @id @default(autoincrement())
+  organizationId         String               @default("org_alencon_001")
+  codigo                 String               @unique // Ex: "PGDAS-D", "PGMEI", "DCTFWEB", "DEFIS", "DASN-SIMEI"
+  nome                   String
+  regimeAplicavel        String               // "SIMPLES_NACIONAL" | "MEI" | "TODOS"
+  periodicidade          String               @default("MENSAL") // "MENSAL" | "ANUAL"
+  diaVencimentoPadrao    Int                  @default(20)
+  uf                     String               @default("TODAS")
+  municipio              String               @default("TODOS")
+  fonteNormativa         String               @default("Resolução CGSN nº 140/2018")
+  dataUltimaRevisao      String               @default("2026-10-15")
+  abrangenciaExcecoes    String               @default("Aplicável a todos os estabelecimentos ativos no período.")
+  responsavelHomologacao String               @default("Dr. Roberto Alencon (Contador Responsável)")
+  ativo                  Boolean              @default(true)
+  createdAt              DateTime             @default(now())
+  instancias             ObligationInstance[]
+}
+
+// Instância de Obrigação por Cliente e Competência (obligation_instances - Seção 2.2)
+// Estados oficiais do PDF (Página 3):
+// "A_PROGRAMAR" | "PENDENTE_DOCUMENTOS" | "EM_PROCESSAMENTO" | "TRANSMITIDA_AGUARDANDO" | "CUMPRIDA" | "ATRASO_ERRO_RETIFICACAO"
+model ObligationInstance {
+  id                Int              @id @default(autoincrement())
+  organizationId    String           @default("org_alencon_001")
+  empresaId         Int
+  empresa           EmpresasClientes @relation(fields: [empresaId], references: [id], onDelete: Cascade)
+  regraId           Int
+  regra             ObligationRule   @relation(fields: [regraId], references: [id], onDelete: Cascade)
+  competencia       String           // Ex: "202610"
+  dataVencimento    String           // Ex: "20/11/2026"
+  estado            String           @default("A_PROGRAMAR")
+  responsavel       String           @default("Ana Costa (Fiscal)")
+  protocoloRecibo   String           @default("")
+  evidenciaArquivo  String           @default("")
+  observacoes       String           @default("")
+  updatedAt         DateTime         @updatedAt
+  createdAt         DateTime         @default(now())
+
+  @@unique([empresaId, regraId, competencia])
+}
+
+// Histórico de Consultas Fiscais Padronizadas (fiscal_checks - Seção 2.1, 3.2 e 5.3)
+model FiscalCheck {
+  id              Int                @id @default(autoincrement())
+  organizationId  String             @default("org_alencon_001")
+  empresaId       Int
+  empresa         EmpresasClientes   @relation(fields: [empresaId], references: [id], onDelete: Cascade)
+  source          String             @default("serpro") // "serpro" | "sefaz" | "prefeitura"
+  service         String             // "fiscal_status" | "pgdas_check" | "dctfweb" | "mailbox" | "parcelamentos"
+  competencia     String             @default("202610")
+  status          String             // "regular" | "attention_required" | "failed_or_incomplete" | "outdated"
+  executadoPor    String             @default("Worker Fiscal Monitor")
+  payloadPadrao   String             @default("{}") // JSON padronizado da Seção 5.3 do PDF
+  mensagemResumo  String             @default("")
+  consultedAt     DateTime           @default(now())
+  ocorrencias     FiscalOccurrence[]
+}
+
+// Ocorrências e Pendências Fiscais Identificadas (fiscal_occurrences - Seção 2.1 e 4)
+model FiscalOccurrence {
+  id               Int              @id @default(autoincrement())
+  organizationId   String           @default("org_alencon_001")
+  empresaId        Int
+  empresa          EmpresasClientes @relation(fields: [empresaId], references: [id], onDelete: Cascade)
+  fiscalCheckId    Int?
+  fiscalCheck      FiscalCheck?     @relation(fields: [fiscalCheckId], references: [id], onDelete: SetNull)
+  tipo             String           // "fiscal_pending" | "omissao_declaracao" | "debito_aberto" | "parcelamento" | "caixa_postal"
+  severidade       String           @default("ALTA") // "BAIXA" | "MEDIA" | "ALTA" | "CRITICA"
+  descricao        String
+  competencia      String           @default("2026-10")
+  fonte            String           @default("SERPRO Integra Contador")
+  idExterno        String           @default("")
+  situacao         String           @default("ABERTA") // "ABERTA" | "EM_TRATAMENTO" | "RESOLVIDA"
+  responsavel      String           @default("Ana Costa (Fiscal)")
+  requiresReview   Boolean          @default(true)
+  consultedAt      DateTime         @default(now())
+  updatedAt        DateTime         @updatedAt
+}
+
+// Tarefas e Alertas da Equipe Contábil (tasks - Seção 2.1, 2.2 e 4)
+model Task {
+  id             Int               @id @default(autoincrement())
+  organizationId String            @default("org_alencon_001")
+  empresaId      Int?
+  empresa        EmpresasClientes? @relation(fields: [empresaId], references: [id], onDelete: Cascade)
+  titulo         String
+  descricao      String            @default("")
+  responsavel    String            @default("Ana Costa (Fiscal)")
+  prazo          String            @default("15/11/2026")
+  prioridade     String            @default("ALTA") // "BAIXA" | "MEDIA" | "ALTA"
+  status         String            @default("PENDENTE") // "PENDENTE" | "EM_ANDAMENTO" | "CONCLUIDA"
+  origem         String            @default("Compliance Monitor") // "Fiscal Monitor" | "Compliance Monitor" | "AI Assistant" | "Client Hub"
+  createdAt      DateTime          @default(now())
+  updatedAt      DateTime          @updatedAt
+}
+
+// Portal de Relacionamento com o Cliente (Client Hub - Seção 2.4)
+model ClientHubRequest {
+  id               Int              @id @default(autoincrement())
+  organizationId   String           @default("org_alencon_001")
+  empresaId        Int
+  empresa          EmpresasClientes @relation(fields: [empresaId], references: [id], onDelete: Cascade)
+  tipo             String           // "SOLICITACAO_DOCUMENTO" | "COMUNICADO" | "DUVIDA_CLIENTE" | "ENTREGA_GUIA"
+  titulo           String
+  mensagem         String
+  status           String           @default("AGUARDANDO_CLIENTE") // "AGUARDANDO_CLIENTE" | "DOCUMENTO_RECEBIDO" | "VALIDADO_ESCRITORIO" | "LIBERADO_PORTAL"
+  nomeArquivoAnexo String           @default("")
+  autor            String           @default("Equipe Alencon")
+  respostaCliente  String           @default("")
+  createdAt        DateTime         @default(now())
+  updatedAt        DateTime         @updatedAt
+}
+
+// Logs de Auditoria, Segurança e Governança (audit_logs - Seção 4, 6.2 e 7)
+model AuditLog {
+  id             Int      @id @default(autoincrement())
+  organizationId String   @default("org_alencon_001")
+  autor          String   @default("Operador Alencon")
+  modulo         String   // "SERPRO_DAS" | "FISCAL_MONITOR" | "COMPLIANCE" | "AI_ASSISTANT" | "CLIENT_HUB" | "SEGURANCA"
+  acao           String
+  detalhes       String   @default("")
+  custoEstimado  Float    @default(0.0)
+  createdAt      DateTime @default(now())
+}
