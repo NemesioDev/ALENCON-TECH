@@ -5,7 +5,9 @@ import dotenv from 'dotenv';
 dotenv.config();
 
 const SUPABASE_URL = process.env.SUPABASE_URL || 'https://ejvxpwmnrivqgiyocyns.supabase.co';
-const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || '';
+const SUPABASE_SERVICE_ROLE_KEY =
+  process.env.SUPABASE_SERVICE_ROLE_KEY ||
+  'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImVqdnhwd21ucml2cWdpeW9jeW5zIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc5Mzc5NTU3OCwiZXhwIjoyMTA5MzcxNTc4fQ.51KY6ATBxIK0Ak4MSDy3dwqG6A8eKTknIkGZRK3D21Q';
 
 export const supabaseAdmin = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
   auth: {
@@ -66,3 +68,4 @@ export async function uploadPdfParaSupabaseStorage(
     return '';
   }
 }
+

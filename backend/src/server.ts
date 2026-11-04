@@ -3,6 +3,7 @@ import cors from 'cors';
 import multer from 'multer';
 import path from 'path';
 import fs from 'fs';
+import os from 'os';
 import dotenv from 'dotenv';
 import { prisma } from './prisma';
 import { EMPRESAS_DEMO, runSeed } from './seed';
@@ -23,7 +24,10 @@ const app = express();
 const PORT = Number(process.env.PORT) || 3001;
 
 // Pastas para armazenamento de certificados A1 (.pfx) e guias PDF geradas
-const STORAGE_DIR = path.join(__dirname, '..', 'storage');
+// Na Vercel (Serverless), utiliza os.tmpdir() (/tmp) que tem permissão de escrita
+const STORAGE_DIR = process.env.VERCEL
+  ? path.join(os.tmpdir(), 'alencon-storage')
+  : path.join(__dirname, '..', 'storage');
 const CERTIFICADOS_DIR = path.join(STORAGE_DIR, 'certificados');
 const PDFS_DIR = path.join(STORAGE_DIR, 'pdfs');
 
@@ -1822,7 +1826,7 @@ app.get('/api/dashboard-geral', async (req, res) => {
   }
 });
 
-// Inicialização do servidor e seed automático no Supabase
+// Inicialização do servidor local (em ambiente Serverless na Vercel o app é exportado diretamente)
 async function iniciarServidor() {
   try {
     await inicializarBucketsSupabase();
@@ -1838,4 +1842,8 @@ async function iniciarServidor() {
   }
 }
 
-iniciarServidor();
+if (!process.env.VERCEL) {
+  iniciarServidor();
+}
+
+export default app;
